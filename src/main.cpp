@@ -27,6 +27,9 @@ bool backHeld = false;
 bool prevBtn4State = HIGH;
 unsigned long lastBtn4ClickTime = 0;
 bool btn4Pressed = false;
+bool trackingJustExited = false;
+unsigned long trackingExitTime = 0;
+int btn4ClickCount = 0;
 
 int wifiMenuIndex = 0;
 std::vector<String> ssidList;
@@ -74,25 +77,38 @@ void loop() {
         backPressTime = millis();
         backHeld = true;
         btn4Pressed = true;
+
+        if (millis() - lastBtn4ClickTime < 500) {
+            btn4ClickCount++;
+        } else {
+            btn4ClickCount = 1;
+        }
+        lastBtn4ClickTime = millis();
     }
 
     if (currentBtn4State == LOW && backHeld && millis() - backPressTime > 1500) {
         currentState = STATE_SETTINGS_OVERVIEW;
         backHeld = false;
         btn4Pressed = false;
+        btn4ClickCount = 0;
     }
 
     if (currentBtn4State == HIGH && prevBtn4State == LOW) {
         if (backHeld && millis() - backPressTime <= 1500) {
             if (btn4Pressed) {
-                if (currentState == STATE_HOME) {
+                if (btn4ClickCount == 2 && currentState == STATE_HOME && !trackingJustExited) {
                     currentState = STATE_TRACKING;
+                    tft.fillScreen(TFT_BLACK);
+                    Serial.println("[BTN4] Double click - Switched to TRACKING state");
+                    btn4ClickCount = 0;
                 } else if (currentState == STATE_TRACKING) {
                     currentState = STATE_HOME;
                     lastTime = "";
+                    trackingExitTime = millis();
+                    trackingJustExited = true;
+                    tft.fillScreen(TFT_BLACK);
+                    Serial.println("[BTN4] Switched back to CLOCK state");
                 }
-                tft.fillScreen(TFT_BLACK);
-                Serial.println(currentState == STATE_TRACKING ? "[BTN4] Switched to TRACKING state" : "[BTN4] Switched back to CLOCK state");
                 btn4Pressed = false;
             }
         }
@@ -100,6 +116,11 @@ void loop() {
     }
 
     prevBtn4State = currentBtn4State;
+
+    // Reset tracking exit flag after 1 second
+    if (trackingJustExited && millis() - trackingExitTime > 1000) {
+        trackingJustExited = false;
+    }
 
     switch (currentState) {
         case STATE_SETTINGS_WIFI: {
@@ -173,6 +194,17 @@ void loop() {
         }
 
         case STATE_TRACKING: {
+            // Exit tracking mode if BTN4 is pressed
+            if (digitalRead(BTN4) == LOW) {
+                currentState = STATE_HOME;
+                lastTime = "";
+                trackingExitTime = millis();
+                trackingJustExited = true;
+                tft.fillScreen(TFT_BLACK);
+                Serial.println("[TRACKING] BTN4 pressed - Exiting to CLOCK");
+                break;
+            }
+
             if (millis() - lastTrackingDraw >= 500) {
                 lastTrackingDraw = millis();
                 scanForFriend();
